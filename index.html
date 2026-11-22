@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1115" media="(prefers-color-scheme: dark)">
+<title>Kairos管理</title>
+<!--
+  Kairos管理（LINE グループにピン留めする予定・やること・議事録のページ）
+  見た目はこのファイルだけ。表の読み書きは Apps Script（minutes-page.gs の受け渡し口）。
+  受け渡し口の住所はこのファイルに書かない（公開リポジトリのため）。ピン留めのリンクの「#k=…」で渡し、端末に覚えさせる。
+
+  見た目の決まり
+  ・色は3役割：文字（--ink / --sub）、主役（--acc 系。次の予定・今日・押せる所）、注意（--red 系。期日だけ）。区分の色は小さな点と帯だけ。
+  ・余白は 4 / 8 / 12 / 16 / 24 / 32。文字は 28 / 20 / 16 / 14 / 12 の5段。角丸は面 16・部品 12・丸 999。影は --sh の1種類。
+-->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{color-scheme:light dark;
+  --bg:#F5F6F8;--sf:#FFFFFF;--soft:#EEF0F4;--ink:#14171F;--sub:#5A6270;--line:#E9EBEF;
+  --acc:#4450E0;--acct:#4450E0;--accs:#ECEEFD;--red:#C62828;--reds:#FDECEC;--redf:#C62828;
+  --bar:#FFFFFF;--toast:#1D212B;--toastt:#FFFFFF;
+  --sh:0 1px 2px rgba(20,23,31,.05),0 4px 16px rgba(20,23,31,.04)}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0F1115;--sf:#1A1D24;--soft:#262A33;--ink:#F2F3F5;--sub:#A7AEBB;--line:#2B2F38;
+  --acc:#4753E2;--acct:#AAB2FF;--accs:#252A52;--red:#FF8A80;--reds:#3B2022;--redf:#D64545;
+  --bar:#16181E;--toast:#ECEEF2;--toastt:#14171F;--sh:none}}
+html{-webkit-text-size-adjust:100%;scroll-padding-bottom:88px;background:var(--bg)}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",Roboto,sans-serif;font-feature-settings:"palt";background:var(--bg);color:var(--ink);line-height:1.5;font-size:16px;line-break:strict;word-break:auto-phrase;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;cursor:pointer;touch-action:manipulation}
+svg{display:block;flex:none}
+.g0{--c:var(--acct)}.g1{--c:#16A34A}.g2{--c:#D97706}.c0{--c:#9333EA}.c1{--c:#0891B2}.c2{--c:#DB2777}.c3{--c:#65A30D}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px}
+.hide{display:none!important}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+
+/* 頭：しるしと更新の時刻。題は画面ごと */
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:calc(12px + env(safe-area-inset-top)) 4px 0;font-size:12px;color:var(--sub)}
+.brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--ink)}
+.brand i{width:24px;height:24px;border-radius:8px;background:var(--acc);color:#fff;font-style:normal;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+main{padding:0 0 calc(104px + env(safe-area-inset-bottom))}
+.pane{animation:pin .22s ease-out}@keyframes pin{from{opacity:0}to{opacity:1}}
+h1{font-size:28px;font-weight:700;line-height:1.3;margin:8px 4px 16px;letter-spacing:0}
+h1 small{font-size:14px;font-weight:500;color:var(--sub);margin-left:8px}
+h2{display:flex;align-items:baseline;gap:8px;font-size:16px;font-weight:700;margin:32px 4px 12px;scroll-margin-top:16px}
+h2 .n{font-size:14px;font-weight:500;color:var(--sub);font-variant-numeric:tabular-nums}
+.card,article,.guide,.cal,.af,.sum,summary{background:var(--sf);border-radius:16px;box-shadow:var(--sh)}
+.card{overflow:hidden}
+
+/* 次の予定：この画面でただ1つの強い面 */
+.hero{background:var(--acc);color:#fff;border-radius:20px;padding:16px 20px 20px;scroll-margin-top:16px;box-shadow:0 8px 24px rgba(68,80,224,.24)}
+.hk{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px;font-size:12px;font-weight:600;color:rgba(255,255,255,.86)}
+.hk b{font-size:12px;font-weight:700;color:var(--acc);background:#fff;border-radius:999px;padding:0 10px;line-height:24px}
+.ht{font-size:20px;font-weight:700;line-height:1.4;margin-top:8px;text-wrap:pretty}
+.hm{font-size:14px;line-height:1.5;color:rgba(255,255,255,.9);margin-top:4px}
+.hg{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:0 10px;line-height:24px;border-radius:999px;background:rgba(255,255,255,.16);font-size:12px;font-weight:600}
+.hg i{width:6px;height:6px;border-radius:50%;background:#fff}
+
+/* 数字：3つを1枚に。押すとその区画へ */
+.sum{display:grid;grid-template-columns:repeat(3,1fr);margin-top:12px}
+.sum button{border:0;background:none;text-align:left;padding:12px 8px 12px 16px;min-width:0;min-height:72px;border-radius:16px;transition:background .15s}
+.sum button:active{background:var(--soft)}
+.sum b{display:block;font-size:20px;font-weight:700;line-height:1.3;font-variant-numeric:tabular-nums}
+.sum b i{font-style:normal;font-size:12px;font-weight:500;margin-left:2px;color:var(--sub)}
+.sum span{display:block;font-size:12px;line-height:1.4;color:var(--sub);white-space:nowrap}
+.sum .warn b,.sum .warn b i,.sum .warn span{color:var(--red)}
+
+/* 予定の並び：左に日、右に札。月が変わる所に月の名前 */
+.mon{font-size:12px;font-weight:600;color:var(--sub);margin:16px 4px 8px}.mon:first-child{margin-top:0}
+.ev{display:flex;gap:8px;align-items:flex-start;margin-top:8px;scroll-margin:88px}.mon+.ev,.ev:first-child{margin-top:0}
+.ev.new{margin-top:16px}.mon+.ev.new,.ev.new:first-child{margin-top:0}
+.dt{flex:none;width:44px;padding-top:8px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.dt span{font-size:12px;color:var(--sub)}
+.dt b{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;width:36px;height:36px;line-height:36px;text-align:center;border-radius:50%}
+.tdy .dt span{color:var(--acct);font-weight:600}.tdy .dt b{background:var(--acc);color:#fff}
+.bd{flex:1;min-width:0}
+.ev .bd{position:relative;background:var(--sf);border-radius:14px;box-shadow:var(--sh);padding:12px 16px 12px 20px;overflow:hidden}
+.ev .bd:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c)}
+.t{font-size:16px;font-weight:600;line-height:1.45;text-wrap:pretty}
+.m{font-size:14px;color:var(--sub);line-height:1.5;margin-top:2px}
+.eye{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;line-height:1.5;color:var(--sub);margin-top:8px}
+.eye b{color:var(--acct);font-weight:600;white-space:nowrap}
+.grp{display:inline-flex;align-items:center;gap:6px;min-width:0}.grp i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
+
+/* やること：担当の頭文字 → 中身 → 担当・期日。3日以内だけ注意の色 */
+.td{display:flex;gap:12px;padding:16px;position:relative}
+.td+.td:before{content:"";position:absolute;top:0;right:0;left:64px;height:1px;background:var(--line)}
+.av{flex:none;width:36px;height:36px;border-radius:50%;background:var(--soft);color:var(--sub);font-style:normal;font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:center}
+.x{font-size:16px;line-height:1.5;text-wrap:pretty}
+.tm{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;font-size:12px;line-height:1.5;color:var(--sub);margin-top:4px}
+.tm b{font-weight:600}.red{color:var(--red);font-weight:600}.soon{color:var(--acct);font-weight:600}
+.tm .grp{margin-left:auto}
+
+/* 折りたたみ（期日を過ぎたもの・過ぎた予定） */
+details{margin-top:12px;scroll-margin-top:16px}h2+details{margin-top:0}
+summary{display:flex;align-items:center;gap:8px;min-height:52px;padding:0 16px;font-size:14px;font-weight:600;list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .15s}
+summary:active{background:var(--soft)}
+summary::-webkit-details-marker{display:none}
+summary b{font-size:12px;font-weight:600;color:var(--red);background:var(--reds);border-radius:999px;padding:0 10px;line-height:24px}
+.pa summary b{color:var(--sub);background:var(--soft)}
+summary:after{content:"";margin-left:auto;margin-right:4px;width:8px;height:8px;border-right:2px solid var(--sub);border-bottom:2px solid var(--sub);transform:translateY(-2px) rotate(45deg);transition:transform .2s}
+details[open] summary:after{transform:translateY(2px) rotate(-135deg)}
+details>.card,details>.list{margin-top:8px}
+
+/* 議事録 */
+article{padding:16px 16px 16px 20px;margin-bottom:12px}
+.day{font-size:12px;font-weight:600;color:var(--sub)}
+.ms{font-size:16px;font-weight:600;line-height:1.5;margin-top:4px;text-wrap:pretty}
+h3{font-size:12px;font-weight:600;color:var(--sub);margin-top:12px}
+ul{list-style:none;margin-top:4px}li{position:relative;padding:4px 0 4px 24px;font-size:14px;line-height:1.6;text-wrap:pretty}
+li:before{content:"";position:absolute;left:5px;top:9px;width:6px;height:11px;border-right:2px solid var(--c,var(--acct));border-bottom:2px solid var(--c,var(--acct));transform:rotate(45deg)}
+.none{color:var(--sub);font-size:14px;padding:0 4px}
+.foot{color:var(--sub);font-size:12px;line-height:1.6;margin:24px 4px 0}
+
+/* 空・失敗・リンクなし */
+.guide{margin-top:16px;padding:32px 24px;text-align:center}
+.center{min-height:72vh;display:flex;flex-direction:column;justify-content:center}.center .guide{margin:0;background:none;box-shadow:none}
+.gi{width:56px;height:56px;margin:0 auto 16px;border-radius:50%;background:var(--accs);color:var(--acct);display:flex;align-items:center;justify-content:center}
+.gt{font-size:16px;font-weight:700;line-height:1.5;text-wrap:balance}.gp{color:var(--sub);font-size:14px;line-height:1.6;margin-top:8px;text-wrap:pretty}
+.retry{margin-top:24px;height:48px;padding:0 24px;border:0;border-radius:12px;background:var(--acc);color:#fff;font-weight:600;transition:transform .1s,opacity .15s}
+.retry:active,.go:active,.add:active,.no:active,.del:active{transform:scale(.97);opacity:.85}
+
+/* 読み込み中の骨組み */
+.sk i{display:block;border-radius:12px;background:linear-gradient(90deg,var(--soft) 25%,var(--line) 50%,var(--soft) 75%);background-size:200% 100%;animation:sk 1.2s linear infinite}
+@keyframes sk{from{background-position:200% 0}to{background-position:0 0}}
+.sk .a{width:112px;height:24px;margin-top:calc(12px + env(safe-area-inset-top))}.sk .b{width:176px;height:36px;margin-top:12px}
+.sk .c{height:148px;margin-top:16px;border-radius:20px}.sk .d{height:72px;margin-top:12px;border-radius:16px}
+.sk .e{width:120px;height:20px;margin-top:32px}.sk .f{height:76px;margin:12px 0 0 52px;border-radius:14px}.sk .f+.f{margin-top:8px}
+
+/* カレンダー */
+.cal{padding:4px 8px 12px}
+.mh{display:flex;align-items:center;justify-content:space-between}.mh b{font-size:16px;font-weight:700}
+.mh button{width:44px;height:44px;border:0;border-radius:50%;background:none;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.mh button:active{background:var(--soft)}
+.mh button:after{content:"";width:9px;height:9px;border-left:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:translateX(2px) rotate(45deg)}
+.mh .nx:after{transform:translateX(-2px) rotate(-135deg)}.mh button:disabled:after{border-color:var(--line)}
+.gr{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
+.gr>i{font-style:normal;font-size:12px;color:var(--sub);line-height:28px}
+.gr span,.gr button{height:48px;display:flex;flex-direction:column;align-items:center;padding-top:4px;border:0;background:none;font-size:14px}
+.gr b{width:32px;height:32px;line-height:32px;border-radius:50%;font-weight:400;font-variant-numeric:tabular-nums;transition:background .15s}
+.gr button:active b{background:var(--soft)}
+.gr .has b{font-weight:700}.gr .past{color:var(--sub)}
+.gr .sel b{background:var(--accs);color:var(--acct);font-weight:700}
+.gr .now b{color:var(--acct);font-weight:700}
+.gr .now.sel b{background:var(--acc);color:#fff}
+.gr em{display:flex;gap:3px;height:4px;margin-top:3px}.gr em i{width:4px;height:4px;border-radius:50%;background:var(--c)}
+
+/* 選んだ日：その日の予定・取り消し・追加 */
+.dsel{margin-top:24px;scroll-margin:88px}
+.dh{font-size:16px;font-weight:700;margin:0 4px 12px}
+.dsel .dt,.dsel .eye b{display:none}.dsel .list:empty{display:none}.dsel .list:not(:empty)+.none{display:none}
+.dsel .none{margin-bottom:4px}
+.del{display:block;height:44px;margin-top:12px;padding:0 16px;border:0;border-radius:12px;background:var(--soft);font-size:14px;font-weight:600;color:var(--red);transition:transform .1s,opacity .15s}
+.del.sure{background:var(--redf);color:#fff}
+.add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:48px;margin-top:12px;border:0;border-radius:12px;background:var(--accs);color:var(--acct);font-size:16px;font-weight:600;transition:transform .1s,opacity .15s}
+.af{padding:20px 16px 16px;margin-top:12px}
+.lb{display:block;font-size:12px;font-weight:600;color:var(--sub);margin-top:16px}.af>.lb:first-child{margin-top:0}
+.af input:not([type=radio]){display:block;width:100%;min-width:0;height:48px;margin-top:4px;padding:0 12px;border:0;border-radius:12px;background:var(--soft);font:inherit;font-size:16px;font-weight:400;color:var(--ink);-webkit-appearance:none;appearance:none;transition:box-shadow .15s,background .15s}
+.af input::placeholder{color:var(--sub);opacity:1}
+.af input:not([type=radio]):focus{outline:0;background:var(--sf);box-shadow:0 0 0 2px var(--acct)}
+.two{display:flex;gap:12px}.two .lb{flex:1;min-width:0}
+.seg{display:flex;gap:4px;margin-top:4px;padding:4px;background:var(--soft);border-radius:12px}
+.seg label{flex:1;position:relative}.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border-radius:8px;font-size:14px;font-weight:600;color:var(--sub);transition:background .15s,color .15s}
+.seg span:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
+.seg input:checked+span{background:var(--sf);color:var(--ink);box-shadow:0 1px 3px rgba(20,23,31,.14)}
+.seg input:focus-visible+span{outline:2px solid var(--acct)}
+.act{display:flex;gap:8px;margin-top:24px}
+.act button{height:48px;border:0;border-radius:12px;font-size:16px;font-weight:600;transition:transform .1s,opacity .15s}
+.go{flex:2;background:var(--acc);color:#fff}.no{flex:1;background:var(--soft)}
+.dsel button:disabled{opacity:.5}
+.err{font-size:14px;font-weight:600;color:var(--red);margin:12px 4px 0}.err:empty{display:none}.fe{margin:12px 0 -8px}
+/* できたときの知らせ：下からそっと出て、数秒で消える */
+.ok{position:fixed;z-index:6;left:16px;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));max-width:528px;margin:0 auto;padding:12px 16px;border-radius:12px;background:var(--toast);color:var(--toastt);font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:ok 4s ease both;pointer-events:none}
+.ok:empty{display:none}
+@keyframes ok{0%{opacity:0;transform:translateY(8px)}6%,88%{opacity:1;transform:none}100%{opacity:0;transform:translateY(8px);visibility:hidden}}
+
+/* 下に固定のタブ：1列で横にすべる。左端はカレンダー */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(16px);backdrop-filter:saturate(180%) blur(16px);box-shadow:0 -1px 0 var(--line);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
+nav .row{display:flex;gap:4px;overflow-x:auto;padding:0 12px;max-width:560px;margin:0 auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 40px),transparent)}
+nav .row::-webkit-scrollbar{display:none}nav .row:after{content:"";flex:none;width:32px}
+nav button{flex:none;display:flex;align-items:center;gap:6px;height:44px;padding:0 14px;border:0;border-radius:999px;background:none;font-size:14px;font-weight:500;color:var(--sub);white-space:nowrap;transition:background .15s,color .15s}
+nav button i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+nav button:active{background:var(--soft)}
+nav button.on{background:var(--accs);color:var(--acct);font-weight:700}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition:none!important}.ok{animation:none}}
+</style></head>
+<body><div id="app"></div>
+<script>
+(function () {
+  'use strict';
+  var SAMPLE = null; /*SAMPLE*/
+  var FIXED = ['社内共有', '社労士', '税理士'];
+  var WD = '日月火水木金土';
+  var app = document.getElementById('app');
+  var D = null, view = 'all', selDay = '';
+
+  // 受け渡し口：ピン留めのリンクの #k=… を端末に覚えさせる
+  var key = (location.hash.match(/k=([\w-]{20,})/) || [])[1];
+  try { if (key) localStorage.setItem('kairos-k', key); else key = localStorage.getItem('kairos-k'); } catch (e) {}
+  var API = key ? 'https://script.google.com/macros/s/' + key + '/exec' : '';
+
+  // 絵（線だけ、24px）
+  function svg(d, s) { return '<svg width="' + (s || 20) + '" height="' + (s || 20) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>'; }
+  var IC = {
+    cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    list: '<path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    off: '<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 16h.01"/>',
+    link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
+    note: '<rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8.5h6M9 12.5h6M9 16.5h3"/>'
+  };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function pad(x) { return ('0' + x).slice(-2); }
+  function norm(d) { var p = String(d || '').trim().split(/[\/\-]/); return p.length < 3 ? '' : p[0] + '-' + pad(p[1]) + '-' + pad(p[2]); }
+  function dow(d) { var p = d.split('-'); return WD.charAt(new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()); }
+  function md(d, withDay) { var p = d.split('-'); return (+p[1]) + '/' + (+p[2]) + (withDay ? '（' + dow(d) + '）' : ''); }
+  function daysBetween(a, b) { var x = a.split('-'), y = b.split('-'); return Math.round((Date.UTC(+y[0], +y[1] - 1, +y[2]) - Date.UTC(+x[0], +x[1] - 1, +x[2])) / 864e5); }
+  function tabOf(g) { for (var i = 0; i < FIXED.length; i++) if (g.indexOf(FIXED[i]) >= 0) return FIXED[i]; return /社内|共有/.test(g) ? '社内共有' : g; }
+  function dateMin(t) { return (+t.slice(0, 4) - 1) + t.slice(4); }
+  function dateMax(t) { var y = +t.slice(0, 4), m = +t.slice(5, 7) + 11; y += Math.floor((m - 1) / 12); m = (m - 1) % 12 + 1; return y + '-' + pad(m) + '-' + pad(new Date(Date.UTC(y, m, 0)).getUTCDate()); }
+
+  // 表の行 → 画面。行：A 日付 / B グループ / C 種類 / D 中身 / E 予定日 / F 時刻 / G 場所 / H 担当 / I 期日 / J 書いた日時 / K 済
+  function render(rows, today, stamp) {
+    var tabs = {}, last = {};
+    function tab(n) { return tabs[n] || (tabs[n] = { events: [], past: [], todos: [], cards: {}, order: [] }); }
+    FIXED.forEach(tab);
+    rows.forEach(function (r, ri) {
+      var day = norm(r[0]), g = String(r[1] || '').trim(), kind = r[2], text = String(r[3] || '').trim();
+      if (!day || !g || !text) return;
+      var name = tabOf(g), T = tab(name);
+      if (!last[name] || last[name] < day) last[name] = day;
+      if (kind === '予定') {
+        var ed = norm(r[4]);
+        if (ed) (ed >= today ? T.events : T.past).push({ g: name, d: ed, t: String(r[5] || '').trim(), title: text, place: String(r[6] || '').trim(), r: ri + 2 });
+        return;
+      }
+      if (kind === '宿題') {
+        if (String(r[10] || '').trim()) return; // K 列「済」に何か入っていたら出さない
+        T.todos.push({ g: name, day: day, text: text, who: String(r[7] || '').trim(), due: norm(r[8]) });
+        return;
+      }
+      if (!T.cards[day]) { T.cards[day] = { sum: '', dec: [] }; T.order.push(day); }
+      if (kind === 'まとめ') T.cards[day].sum = T.cards[day].sum ? T.cards[day].sum + '／' + text : text;
+      else if (kind === '決定') T.cards[day].dec.push(text);
+    });
+    var others = Object.keys(tabs).filter(function (n) { return FIXED.indexOf(n) < 0; }).sort(function (a, b) { return (last[a] || '') < (last[b] || '') ? 1 : -1; });
+    var names = FIXED.concat(others), cls = {};
+    FIXED.forEach(function (n, i) { cls[n] = 'g' + i; });
+    others.slice().sort().forEach(function (n, i) { cls[n] = 'c' + (i % 4); });
+
+    function evKey(e) { return e.d + ' ' + ('0' + (e.t || '99:99')).slice(-5); }
+    function byEvent(a, b) { return evKey(a) < evKey(b) ? -1 : 1; }
+    function byDue(a, b) { var x = (a.due || '9999') + a.day, y = (b.due || '9999') + b.day; return x < y ? -1 : x > y ? 1 : 0; }
+    function isLate(t) { return t.due && t.due < today; }
+    function grp(g) { return '<span class="grp ' + cls[g] + '"><i></i>' + esc(g) + '</span>'; }
+    function countdown(d) { var k = daysBetween(today, d); return k < 0 ? '' : k === 0 ? '今日' : k === 1 ? '明日' : k <= 7 ? 'あと' + k + '日' : ''; }
+    function meta(e, withDate) { return [withDate ? md(e.d, true) : '', e.t || '時刻未定', e.place].filter(String).join('・'); }
+
+    // 予定の並び。同じ日の2件目からは日付を出さず、月が変わる所に月の名前を入れる
+    function evList(items, showGroup) {
+      var s = '<div class="list">', pd = '', pm = '';
+      items.forEach(function (e) {
+        var m = e.d.slice(0, 7), cd = countdown(e.d), first = e.d !== pd;
+        if (m !== pm) s += '<p class="mon">' + (m.slice(0, 4) === today.slice(0, 4) ? '' : m.slice(0, 4) + '年') + (+m.slice(5)) + '月</p>';
+        var eye = (showGroup ? grp(e.g) : '') + (cd ? '<b>' + cd + '</b>' : '');
+        s += '<div class="ev ' + cls[e.g] + (first && pd ? ' new' : '') + (e.d === today ? ' tdy' : '') + '" data-d="' + e.d + '" data-r="' + e.r + '" data-t="' + esc(e.t) + '">' +
+          '<div class="dt">' + (first ? '<span>' + dow(e.d) + '</span><b>' + (+e.d.slice(8)) + '</b>' : '') + '</div><div class="bd">' +
+          '<p class="t">' + esc(e.title) + '</p><p class="m">' + esc(meta(e)) + '</p>' + (eye ? '<p class="eye">' + eye + '</p>' : '') + '</div></div>';
+        pd = e.d; pm = m;
+      });
+      return s + '</div>';
+    }
+    function heroHtml(e) {
+      var k = daysBetween(today, e.d), cd = countdown(e.d);
+      return '<section class="hero" data-a="ev"><p class="hk">次の予定' + (cd ? '<b>' + cd + '</b>' : '') + '</p><p class="ht">' + esc(e.title) + '</p>' +
+        '<p class="hm">' + esc(meta(e, k > 0)) + '</p><p class="hg"><i></i>' + esc(e.g) + '</p></section>';
+    }
+    function todoHtml(t, showGroup, late) {
+      var due = '<span>期日なし</span>';
+      if (t.due) {
+        var k = daysBetween(today, t.due), d = md(t.due, true);
+        due = late ? '<span>' + d + 'まで</span>' : k === 0 ? '<span class="red">今日まで</span>' : k === 1 ? '<span class="soon">明日まで</span>'
+          : k <= 3 ? '<span class="soon">あと' + k + '日・' + d + '</span>' : '<span>' + d + 'まで</span>';
+      }
+      return '<div class="td">' + '<i class="av">' + esc(t.who.charAt(0)) + '</i><div class="bd"><p class="x">' + esc(t.text) + '</p><p class="tm">' +
+        (t.who ? '<b>' + esc(t.who) + '</b>' : '') + due + (showGroup ? grp(t.g) : '') + '</p></div></div>';
+    }
+    function head(title, n, a) { return '<h2' + (a ? ' data-a="' + a + '"' : '') + '>' + title + (n ? '<span class="n">' + n + '</span>' : '') + '</h2>'; }
+
+    function calHtml(items) {
+      var by = {}, firstD = today, lastD = today;
+      items.forEach(function (e) { (by[e.d] = by[e.d] || []).push(e); if (e.d > lastD) lastD = e.d; if (e.d < firstD) firstD = e.d; });
+      function mi(d) { return +d.slice(0, 4) * 12 + (+d.slice(5, 7)) - 1; }
+      var now = mi(today), from = Math.max(Math.min(mi(firstD), now - 1), now - 12), to = Math.min(Math.max(mi(lastD), now + 2), now + 11), n = to - from + 1;
+      var s = '<div class="cal">';
+      for (var k = 0; k < n; k++) {
+        var yy = Math.floor((from + k) / 12), mm = (from + k) % 12 + 1;
+        s += '<div class="mo' + (from + k === now ? '' : ' hide') + '" data-k="' + k + '" data-m="' + yy + '-' + pad(mm) + '"><div class="mh"><button class="pv" aria-label="前の月"' + (k ? '' : ' disabled') +
+          '></button><b>' + yy + '年' + mm + '月</b><button class="nx" aria-label="次の月"' + (k < n - 1 ? '' : ' disabled') + '></button></div><div class="gr">';
+        WD.split('').forEach(function (w) { s += '<i>' + w + '</i>'; });
+        var first = new Date(yy, mm - 1, 1).getDay(), lastDay = new Date(yy, mm, 0).getDate(), d;
+        for (d = 0; d < first; d++) s += '<span></span>';
+        for (d = 1; d <= lastDay; d++) {
+          var key = yy + '-' + pad(mm) + '-' + pad(d), evs = by[key], c = (key < today ? 'past' : '') + (key === today ? ' now' : ''), dots = '';
+          if (evs) { var seen = {}; evs.forEach(function (e) { if (!seen[e.g] && Object.keys(seen).length < 3) { seen[e.g] = 1; dots += '<i class="' + cls[e.g] + '"></i>'; } }); }
+          s += '<button data-d="' + key + '" class="' + (evs ? 'has ' : '') + c + '" aria-label="' + mm + '月' + d + '日' + (key === today ? '（今日）' : '') + (evs ? 'の予定' : '') + '"><b>' + d + '</b><em>' + dots + '</em></button>';
+        }
+        s += '</div></div>';
+      }
+      return s + '</div>';
+    }
+    function todoSection(items, showGroup) {
+      var open = [], late = [];
+      items.sort(byDue).forEach(function (t) { (isLate(t) ? late : open).push(t); });
+      var s = head('やること', open.length, 'td');
+      if (open.length) s += '<div class="card">' + open.map(function (x) { return todoHtml(x, showGroup, false); }).join('') + '</div>';
+      else if (!late.length) s += '<p class="none">やることはありません</p>';
+      if (late.length) s += '<details data-a="late"><summary>期日を過ぎたもの<b>' + late.length + '件</b></summary><div class="card">' + late.map(function (x) { return todoHtml(x, showGroup, true); }).join('') + '</div></details>';
+      return s;
+    }
+    function addForm() {
+      var seg = FIXED.map(function (n, i) { return '<label class="' + cls[n] + '"><input type="radio" name="g" value="' + n + '"' + (i ? '' : ' checked') + '><span>' + n + '</span></label>'; }).join('');
+      return '<p class="ok" role="status"></p><button type="button" class="add">' + svg(IC.plus) + 'この日に予定を追加</button>' +
+        '<form class="af hide" novalidate><label class="lb">内容<input name="x" maxlength="100" placeholder="例：社労士と打合せ" autocomplete="off" enterkeyhint="done"></label>' +
+        '<div class="two"><label class="lb">日付<input type="date" name="d" min="' + dateMin(today) + '" max="' + dateMax(today) + '"></label><label class="lb">時刻<input type="time" name="t"></label></div>' +
+        '<label class="lb">場所<input name="pl" maxlength="60" placeholder="なくても大丈夫です" autocomplete="off" enterkeyhint="done"></label>' +
+        '<p class="lb">区分</p><div class="seg">' + seg + '</div><p class="err fe" role="alert"></p>' +
+        '<div class="act"><button type="submit" class="go">追加する</button><button type="button" class="no">やめる</button></div></form><p class="err de" role="alert"></p>';
+    }
+    function guide(title) { return '<div class="guide"><div class="gi">' + svg(IC.note, 28) + '</div><p class="gt">' + title + '</p><p class="gp">LINE での打合せがまとまると、予定・やること・決まったことがここに載ります。</p></div>'; }
+    function stats(ev, td) {
+      var a = ev.filter(function (e) { return daysBetween(today, e.d) <= 1; }).length,
+        b = td.filter(function (t) { return t.due && !isLate(t) && daysBetween(today, t.due) <= 7; }).length, c = td.filter(isLate).length;
+      function one(go, n, kind, period, w) { return '<button data-go="' + go + '"' + (w ? ' class="warn"' : '') + '><b>' + n + '<i>件</i></b><span>' + kind + '</span><span>' + period + '</span></button>'; }
+      return '<div class="sum">' + one('ev', a, '予定', '今日・明日') + one('td', b, 'やること', '7日以内') + one(c ? 'late' : 'td', c, 'やること', '期日切れ', c > 0) + '</div>';
+    }
+
+    var allEv = [], allPast = [], allTd = [], cardCount = 0;
+    names.forEach(function (n) { allEv = allEv.concat(tabs[n].events); allPast = allPast.concat(tabs[n].past); allTd = allTd.concat(tabs[n].todos); cardCount += tabs[n].order.length; });
+    allEv.sort(byEvent);
+
+    var tp = today.split('-'), h = [];
+    h.push('<div class="wrap"><header><span class="brand"><i>K</i>Kairos管理</span><span>' + esc(stamp) + ' 更新</span></header><main>');
+
+    // すべて：次の予定 → 数字 → 残りの予定 → やること
+    h.push('<div class="pane" data-p="all"><h1>' + (+tp[1]) + '月' + (+tp[2]) + '日<small>' + dow(today) + '曜日</small></h1>');
+    if (!allEv.length && !allTd.length && !cardCount) h.push(guide('打合せの内容は、まだ載っていません'));
+    else {
+      if (allEv.length) h.push(heroHtml(allEv[0]));
+      h.push(stats(allEv, allTd));
+      if (allEv.length > 1) h.push(head('このあとの予定', allEv.length - 1) + evList(allEv.slice(1), true));
+      else if (!allEv.length) h.push(head('これからの予定', 0, 'ev') + '<p class="none">決まっている予定はありません</p>');
+      h.push(todoSection(allTd, true) + '<p class="foot">議事録は、下のタブで区分を選ぶと読めます。' + (allTd.length ? '<br>済んだやることは、議事録の表の「済」の欄に印を付けると消えます。' : '') + '</p>');
+    }
+    h.push('</div>');
+
+    // カレンダー
+    h.push('<div class="pane hide" data-p="cal"><h1>カレンダー</h1>' + calHtml(allEv.concat(allPast)) +
+      '<div class="dsel"><p class="dh"></p><div class="list"></div><p class="none">この日の予定はありません</p>' + addForm() + '</div>');
+    h.push(head('これからの予定', allEv.length));
+    h.push(allEv.length ? evList(allEv, true) : '<p class="none">これからの予定はありません</p>');
+    if (allPast.length) h.push('<details class="pa"><summary>過ぎた予定<b>' + allPast.length + '件</b></summary>' + evList(allPast.slice().sort(byEvent).reverse(), true) + '</details>');
+    h.push('</div>');
+
+    // 区分ごと：予定 → やること → 議事録
+    names.forEach(function (n, i) {
+      var T = tabs[n];
+      h.push('<div class="pane hide ' + cls[n] + '" data-p="' + i + '"><h1>' + esc(n) + '</h1>');
+      if (!T.events.length && !T.todos.length && !T.order.length) { h.push(guide('「' + esc(n) + '」の打合せは、まだ載っていません') + '</div>'); return; }
+      h.push(stats(T.events, T.todos) + head('これからの予定', T.events.length, 'ev'));
+      h.push(T.events.length ? evList(T.events.sort(byEvent), false) : '<p class="none">決まっている予定はありません</p>');
+      h.push(todoSection(T.todos, false) + head('議事録', T.order.length));
+      if (!T.order.length) h.push('<p class="none">議事録はまだありません</p>');
+      T.order.sort(function (a, b) { return a < b ? 1 : -1; }).forEach(function (day) {
+        var c = T.cards[day];
+        h.push('<article><p class="day">' + md(day, true) + '</p>' + (c.sum ? '<p class="ms">' + esc(c.sum) + '</p>' : ''));
+        if (c.dec.length) h.push('<h3>決まったこと</h3><ul>' + c.dec.map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ul>');
+        h.push('</article>');
+      });
+      if (T.todos.length) h.push('<p class="foot">済んだやることは、議事録の表の「済」の欄に印を付けると消えます。</p>');
+      h.push('</div>');
+    });
+    h.push('</main></div><nav id="f"><div class="row"><button data-t="cal">' + svg(IC.cal, 18) + 'カレンダー</button><button data-t="all">' + svg(IC.list, 18) + 'すべて</button>');
+    names.forEach(function (n, i) { h.push('<button data-t="' + i + '" class="' + cls[n] + '"><i></i>' + esc(n) + '</button>'); });
+    h.push('</div></nav>');
+    return h.join('');
+  }
+
+  // ---- 画面の動き ----
+  function $(q, r) { return (r || document).querySelector(q); }
+  function $$(q, r) { return Array.prototype.slice.call((r || document).querySelectorAll(q)); }
+  function show(t) {
+    if (!$('.pane[data-p="' + t + '"]')) t = 'all';
+    view = t;
+    $$('#f button').forEach(function (x) { var on = x.dataset.t === t; x.classList.toggle('on', on); if (on) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
+    $$('.pane').forEach(function (p) { p.classList.toggle('hide', p.dataset.p !== t); });
+  }
+  function clearMsg(ds) { $$('.ok,.err', ds).forEach(function (x) { x.textContent = ''; }); }
+  function closeForm(ds) { $('.af', ds).classList.add('hide'); $('.add', ds).classList.remove('hide'); }
+  function pick(b) {
+    var p = b.closest('.pane'), k = b.dataset.d, x = k.split('-');
+    $$('.cal .sel', p).forEach(function (o) { o.classList.remove('sel'); });
+    b.classList.add('sel'); selDay = k;
+    var ds = $('.dsel', p), l = $('.list', ds);
+    ds.dataset.d = k;
+    $('.dh', ds).textContent = (+x[1]) + '月' + (+x[2]) + '日（' + dow(k) + '）' + (b.classList.contains('now') ? '・今日' : '');
+    l.innerHTML = '';
+    $$('.ev[data-d="' + k + '"]', p).forEach(function (el) {
+      if (el.closest('.dsel')) return;
+      var c = el.cloneNode(true), d = document.createElement('button');
+      c.classList.remove('new', 'tdy');
+      d.type = 'button'; d.className = 'del'; d.textContent = '取り消す';
+      $('.bd', c).appendChild(d); l.appendChild(c);
+    });
+    clearMsg(ds); closeForm(ds);
+  }
+  function draw(day) {
+    app.innerHTML = render(D.rows, D.today, D.stamp);
+    show(day ? 'cal' : view);
+    var want = day || selDay;
+    if (want) { var m = $('.mo[data-m="' + want.slice(0, 7) + '"]'); if (m) { $$('.mo').forEach(function (o) { o.classList.add('hide'); }); m.classList.remove('hide'); } }
+    var b = (want && $('.cal button[data-d="' + want + '"]')) || $('.cal button.now');
+    if (b) pick(b);
+  }
+  function skeleton() { app.innerHTML = '<div class="wrap sk" aria-busy="true"><p class="vh" role="status">読み込んでいます</p><i class="a"></i><i class="b"></i><i class="c"></i><i class="d"></i><i class="e"></i><i class="f"></i><i class="f"></i><i class="f"></i></div>'; }
+  function fail(icon, msg, sub, retry) { app.innerHTML = '<div class="wrap center"><div class="guide"><div class="gi">' + svg(icon, 28) + '</div><p class="gt">' + msg + '</p>' + (sub ? '<p class="gp">' + sub + '</p>' : '') + (retry ? '<button class="retry">もう一度読み込む</button>' : '') + '</div></div>'; }
+  function load() {
+    if (SAMPLE) { D = SAMPLE; draw(); return; }
+    if (!API) { fail(IC.link, 'LINE のグループにピン留めしたリンクから開いてください', 'このページは、ピン留めのリンクから開くと中身が表示されます。'); return; }
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem('kairos-d')); } catch (e) {}
+    if (cached && cached.rows && !D) { D = cached; draw(); } // 前回の中身をすぐ出し、読み直したら差し替える
+    else if (!D) skeleton();
+    fetch(API + '?api=1').then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || j.error || !j.rows) throw new Error();
+      D = j; try { localStorage.setItem('kairos-d', JSON.stringify(j)); } catch (e) {}
+      draw();
+    }).catch(function () { if (!D) fail(IC.off, '読み込めませんでした', '電波のよい所で、もう一度お試しください。', true); });
+  }
+  // 表に書く。本番は Apps Script へ（text/plain で送り、事前の確かめを起こさない）。見本では手元のデータを書き換える
+  function call(fn, arg) {
+    if (SAMPLE) return mock(fn, arg);
+    return fetch(API, { method: 'POST', body: JSON.stringify({ fn: fn, arg: arg }) }).then(function (r) { return r.json(); })
+      .then(function (j) { if (!j || j.error) throw new Error((j && j.error) || ''); return j; });
+  }
+  function same(x, o) { return x && x[2] === '予定' && String(x[3]).trim() === o.title && norm(x[4]) === o.d && String(x[5] || '').trim() === (o.t || ''); }
+  function mock(fn, a) {
+    return new Promise(function (ok, ng) {
+      setTimeout(function () {
+        var rows = D.rows.slice(), note, i;
+        if (fn === 'addEvent') { rows.push([D.today.replace(/-/g, '/'), a.g, '予定', a.title, a.d.replace(/-/g, '/'), a.t, a.place, '', '', '', '']); note = '予定を追加しました'; }
+        else {
+          i = same(rows[a.r - 2], a) ? a.r - 2 : -1;
+          if (i < 0) for (var k = 0; k < rows.length; k++) if (same(rows[k], a)) { i = k; break; }
+          if (i >= 0) rows.splice(i, 1);
+          note = i >= 0 ? '予定を取り消しました' : 'この予定は、すでに取り消されていました';
+        }
+        SAMPLE = { rows: rows, today: D.today, stamp: D.stamp };
+        ok({ rows: rows, today: D.today, stamp: D.stamp, note: note });
+      }, 400);
+    });
+  }
+  function run(fn, arg, btn, busy, day) {
+    var ds = btn.closest('.dsel'), label = btn.textContent, err = btn.closest('form') ? $('.fe', ds) : $('.de', ds);
+    $$('button', ds).forEach(function (x) { x.disabled = true; });
+    btn.textContent = busy; clearMsg(ds);
+    call(fn, arg).then(function (res) {
+      D = { rows: res.rows, today: res.today, stamp: res.stamp };
+      try { if (!SAMPLE) localStorage.setItem('kairos-d', JSON.stringify(D)); } catch (e) {}
+      draw(day);
+      var nd = $('.pane[data-p="cal"] .dsel');
+      $('.ok', nd).textContent = res.note;
+      nd.scrollIntoView({ block: 'nearest' });
+    }).catch(function (e) {
+      $$('button', ds).forEach(function (x) { x.disabled = false; });
+      btn.textContent = label;
+      err.textContent = (e && e.message) || '書き込めませんでした。電波のよい所で、もう一度お試しください';
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.classList.contains('retry')) { load(); return; }
+    if (b.closest('#f')) { show(b.dataset.t); window.scrollTo(0, 0); b.scrollIntoView({ block: 'nearest', inline: 'center' }); return; }
+    if (b.closest('.sum')) {
+      var el = $('[data-a="' + b.dataset.go + '"]', b.closest('.pane'));
+      if (el) { if (el.tagName === 'DETAILS') el.open = true; el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      return;
+    }
+    if (b.closest('.cal')) {
+      if (b.dataset.d) { pick(b); $('.dsel', b.closest('.pane')).scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+      var mo = b.closest('.mo'), t = $('.mo[data-k="' + (+mo.dataset.k + (b.classList.contains('nx') ? 1 : -1)) + '"]', b.closest('.cal'));
+      if (t) { mo.classList.add('hide'); t.classList.remove('hide'); }
+      return;
+    }
+    var ds = b.closest('.dsel');
+    if (!ds) return;
+    if (b.classList.contains('add')) {
+      var f = $('.af', ds);
+      f.reset(); f.elements.d.value = ds.dataset.d;
+      f.classList.remove('hide'); b.classList.add('hide'); clearMsg(ds);
+      f.elements.x.focus();
+    } else if (b.classList.contains('no')) {
+      closeForm(ds); clearMsg(ds);
+    } else if (b.classList.contains('del')) {
+      if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = '本当に取り消す'; return; }
+      var ev = b.closest('.ev');
+      run('cancelEvent', { r: +ev.dataset.r, d: ev.dataset.d, t: ev.dataset.t || '', title: $('.t', ev).textContent }, b, '取り消しています…', ev.dataset.d);
+    }
+  });
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f.classList.contains('af')) return;
+    e.preventDefault();
+    var g = $('input[name="g"]:checked', f), ds = f.closest('.dsel');
+    var o = { title: f.elements.x.value.trim(), d: f.elements.d.value, t: f.elements.t.value, place: f.elements.pl.value.trim(), g: g ? g.value : '' };
+    var msg = !o.title ? '内容を入れてください' : !o.d ? '日付を選んでください' : (o.d < dateMin(D.today) || o.d > dateMax(D.today)) ? '日付を選び直してください' : '';
+    if (msg) { $('.fe', ds).textContent = msg; (o.title ? f.elements.d : f.elements.x).focus(); return; }
+    run('addEvent', o, $('.go', f), '追加しています…', o.d);
+  });
+  load();
+})();
+</script>
+</body></html>
