@@ -330,7 +330,7 @@ nav button.on{background:var(--accs);color:var(--acct);font-weight:700}
         '<p class="lb">区分</p><div class="seg">' + seg + '</div><p class="err fe" role="alert"></p>' +
         '<div class="act"><button type="submit" class="go">追加する</button><button type="button" class="no">やめる</button></div></form><p class="err de" role="alert"></p>';
     }
-    function guide(title) { return '<div class="guide"><div class="gi">' + svg(IC.note, 28) + '</div><p class="gt">' + title + '</p><p class="gp">LINE での打合せがまとまると、予定・やること・決まったことがここに載ります。</p></div>'; }
+    function guide(title, body) { return '<div class="guide"><div class="gi">' + svg(IC.note, 28) + '</div><p class="gt">' + title + '</p><p class="gp">' + body + '</p></div>'; }
     function stats(ev, td) {
       var a = ev.filter(function (e) { return daysBetween(today, e.d) <= 1; }).length,
         b = td.filter(function (t) { return t.due && !isLate(t) && daysBetween(today, t.due) <= 7; }).length, c = td.filter(isLate).length;
@@ -347,7 +347,7 @@ nav button.on{background:var(--accs);color:var(--acct);font-weight:700}
 
     // すべて：次の予定 → 数字 → 残りの予定 → やること
     h.push('<div class="pane" data-p="all"><h1>' + (+tp[1]) + '月' + (+tp[2]) + '日<small>' + dow(today) + '曜日</small></h1>');
-    if (!allEv.length && !allTd.length && !cardCount) h.push(guide('打合せの内容は、まだ載っていません'));
+    if (!allEv.length && !allTd.length && !cardCount) h.push(guide('まだ、まとめはありません', 'LINE グループのトークから、大事な内容（決まったこと・やること・日程）を要約してここに載せます。'));
     else {
       if (allEv.length) h.push(heroHtml(allEv[0]));
       h.push(stats(allEv, allTd));
@@ -369,7 +369,7 @@ nav button.on{background:var(--accs);color:var(--acct);font-weight:700}
     names.forEach(function (n, i) {
       var T = tabs[n];
       h.push('<div class="pane hide ' + cls[n] + '" data-p="' + i + '"><h1>' + esc(n) + '</h1>');
-      if (!T.events.length && !T.todos.length && !T.order.length) { h.push(guide('「' + esc(n) + '」の打合せは、まだ載っていません') + '</div>'); return; }
+      if (!T.events.length && !T.todos.length && !T.order.length) { h.push(guide(esc(n) + 'のまとめは、まだありません', 'このグループのトークから大事な内容を要約して、ここに載せます。日程はカレンダーにも入ります。') + '</div>'); return; }
       h.push(stats(T.events, T.todos) + head('これからの予定', T.events.length, 'ev'));
       h.push(T.events.length ? evList(T.events.sort(byEvent), false) : '<p class="none">決まっている予定はありません</p>');
       h.push(todoSection(T.todos, false) + head('議事録', T.order.length));
