@@ -429,7 +429,7 @@ nav button.on{background:var(--accs);color:var(--acct);font-weight:700}
   function fail(icon, msg, sub, retry) { app.innerHTML = '<div class="wrap center"><div class="guide"><div class="gi">' + svg(icon, 28) + '</div><p class="gt">' + msg + '</p>' + (sub ? '<p class="gp">' + sub + '</p>' : '') + (retry ? '<button class="retry">もう一度読み込む</button>' : '') + '</div></div>'; }
   function load() {
     if (SAMPLE) { D = SAMPLE; draw(); return; }
-    if (!API) { fail(IC.link, 'LINE のグループにピン留めしたリンクから開いてください', 'このページは、ピン留めのリンクから開くと中身が表示されます。'); return; }
+    if (!API) { fail(IC.link, 'LINE のピン留めから開いてください'); return; }
     var cached = null;
     try { cached = JSON.parse(localStorage.getItem('kairos-d')); } catch (e) {}
     if (cached && cached.rows && !D) { D = cached; draw(); } // 前回の中身をすぐ出し、読み直したら差し替える
